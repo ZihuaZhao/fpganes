@@ -1,0 +1,128 @@
+------+-----+---------------------------------------------------------------
+$2000 | RW  | PPU Control Register 1                                        //PPU总控制器；(PPUCTRL)
+      | 0-1 | Name Table Address:                                           //用于存储当前的nameable的地址；
+      |     |                                                               //地址为1、2、3、4，长度为2bit；
+      |     |           +-----------+-----------+
+      |     |           | 2 ($2800) | 3 ($2C00) |
+      |     |           +-----------+-----------+
+      |     |           | 0 ($2000) | 1 ($2400) |
+      |     |           +-----------+-----------+
+      |     |
+      |     | Remember that because of the mirroring there are only 2  
+      |     | real Name Tables, not 4. Also, PPU will automatically
+      |     | switch to another Name Table when running off the current
+      |     | Name Table during scroll (see picture above).
+      |   2 | Vertical Write, 1 = PPU memory address increments by 32:      //nametable读写方式，长度为1bit；
+      |     |                                                               //若是0则是向右读写，若是1则是向下读写；
+      |     |    Name Table, VW=0          Name Table, VW=1
+      |     |   +----------------+        +----------------+
+      |     |   |----> write     |        | | write        |
+      |     |   |                |        | V              |
+      |     |
+      |   3 | Sprite Pattern Table Address, 1 = $1000, 0 = $0000.           //精灵模式表地址，长度为1bit，对应两种模式表，精灵为8*16时忽视；
+      |   4 | Screen Pattern Table Address, 1 = $1000, 0 = $0000.           //背景模式表地址，长度为1bit，对应两种模式表；
+      |   5 | Sprite Size, 1 = 8x16, 0 = 8x8.                               //精灵大小；
+      |   6 | PPU Master/Slave Mode, not used in NES.                       //**Master/Slave模式选择，好像没有用；
+      |   7 | VBlank Enable, 1 = generate interrupts on VBlank.             //**判断是否有vblank的信号；
+------+-----+---------------------------------------------------------------
+$2001 | RW  | PPU Control Register 2                                        //控制PPU颜色渲染；(PPUMASK)
+      |   0 | Unknown (???)                                                 //颜色灰度控制，长度为1bit，对应正常与灰度；
+      |   1 | Image Mask, 0 = don't show left 8 columns of the screen.      //控制是否在屏幕最左边的8个像素显示背景；
+      |   2 | Sprite Mask, 0 = don't show sprites in left 8 columns.        //控制是否在屏幕最左边的8个像素显示精灵；
+      |   3 | Screen Enable, 1 = show picture, 0 = blank screen.            //控制是否显示背景；
+      |   4 | Sprites Enable, 1 = show sprites, 0 = hide sprites.           //控制是否显示精灵；
+      | 5-7 | Background Color, 0 = black, 1 = blue, 2 = green, 4 = red.    //控制背景颜色；
+      |     | Do not use any other numbers as you may damage PPU hardware.  //最好在vblank时对此寄存器进行写入；
+------+-----+---------------------------------------------------------------
+$2002 | R   | PPU Status Register                                           //反映PPU各部分的状态，主要用于时间决策；(PPUSTATUS)
+      | 0-5 | Unknown (???)                                                 //bit5反映若当前扫描线同时扫描到8个及以上的精灵时导致的溢出；
+      |   6 | Hit Flag, 1 = Sprite refresh has hit sprite #0.               //反映是否存在Sprite 0 hit；
+      |     | This flag resets to 0 when screen refresh starts              //当屏幕更新时，重新将这一位置为0；
+      |     | (see "PPU Details").
+      |   7 | VBlank Flag, 1 = PPU is in VBlank state.                      //反映当前PPU状态是否为vblank；
+      |     | This flag resets to 0 when VBlank ends or CPU reads $2002     //当vblank结束或者CPU读取当前寄存器后重置为0；
+      |     | (see "PPU Details").
+------+-----+---------------------------------------------------------------
+$2003 | W   | Sprite Memory Address                                         //用于保存想要访问的OAM地址；(OAMADDR)
+      |     | Used to set the address of the 256-byte Sprite Memory to be 
+      |     | accessed via $2004. This address will increment by 1 after
+      |     | each access to $2004. Sprite Memory contains coordinates,
+      |     | colors, and other sprite attributes (see "Sprites").
+------+-----+---------------------------------------------------------------
+$2004 | RW  | Sprite Memory Data                                            //用于存储精灵的相关信息；(OAMDATA)
+      |     | Used to read/write the Sprite Memory. The address is set via
+      |     | $2003 and increments by 1 after each access. Sprite Memory 
+      |     | contains coordinates, colors, and other sprite attributes
+      |     | sprites (see "Sprites").
+------+-----+---------------------------------------------------------------
+$2005 | W   | Screen Scroll Offsets                                         //用于存储滚动时渲染的位置；(PPUSCROLL)
+      |     | There are two scroll registers, vertical and horizontal,      //会写入两次，第一次垂直滚动寄存器，第二次水平滚动寄存器；
+      |     | which are both written via this port. The first value written
+      |     | will go into the Vertical Scroll Register (unless it is >239,
+      |     | then it will be ignored). The second value will appear in the
+      |     | Horizontal Scroll Register. Name Tables are assumed to be
+      |     | arranged in the following way:
+      |     |
+      |     |           +-----------+-----------+
+      |     |           | 2 ($2800) | 3 ($2C00) |
+      |     |           +-----------+-----------+
+      |     |           | 0 ($2000) | 1 ($2400) |
+      |     |           +-----------+-----------+
+      |     |
+      |     | When scrolled, the picture may span over several Name Tables.
+      |     | Remember that because of the mirroring there are only 2 real
+      |     | Name Tables, not 4.
+------+-----+---------------------------------------------------------------
+$2006 | W   | PPU Memory Address                                            //用于存储PPUMEM的地址，CPU将会读取该地址的位置，
+      |     | Used to set the address of PPU Memory to be accessed via      //并且在该位置不断写入信息；(PPUADDR)
+      |     | $2007. The first write to this register will set 8 lower      //将会有两次写入分别决定地址的低8位和高6位；
+      |     | address bits. The second write will set 6 upper bits. The     //每次对PPUDATA的访问会使得该地址增加1或32；
+      |     | address will increment either by 1 or by 32 after each
+      |     | access to $2007 (see "PPU Memory").
+------+-----+---------------------------------------------------------------
+$2007 | RW  | PPU Memory Data                                               //VRAM读写的寄存器；(PPUDATA)
+      |     | Used to read/write the PPU Memory. The address is set via
+      |     | $2006 and increments after each access, either by 1 or by 32
+      |     | (see "PPU Memory").
+------+-----+---------------------------------------------------------------
+$4000-$4013 | Sound Registers
+            | See "Sound".
+------+-----+---------------------------------------------------------------
+$4014 | W   | DMA Access to the Sprite Memory                               //(OAMDMA)
+      |     | Writing a value N into this port causes an area of CPU memory
+      |     | at address $100*N to be transferred into the Sprite Memory.
+------+-----+---------------------------------------------------------------
+$4015 | W   | Sound Channel Switch
+      |   0 | Channel 1, 1 = enable sound.
+      |   1 | Channel 2, 1 = enable sound.
+      |   2 | Channel 3, 1 = enable sound.
+      |   3 | Channel 4, 1 = enable sound.
+      |   4 | Channel 5, 1 = enable sound.
+      | 5-7 | Unused (???)
+------+-----+---------------------------------------------------------------
+$4016 | RW  | Joystick1 + Strobe
+      |   0 | Joystick1 Data (see "Joysticks).
+      |   1 | Joystick1 Presence, 0 = connected.
+      | 2-5 | Unused, set to 000 (???)
+      | 6-7 | Unknown, set to 10 (???)
+------+-----+---------------------------------------------------------------
+$4017 | RW  | Joystick2 + Strobe
+      |   0 | Joystick2 Data (see "Joysticks).
+      |   1 | Joystick2 Presence, 0 = connected.
+      | 2-5 | Unused, set to 000 (???)
+      | 6-7 | Unknown, set to 10 (???)
+------+-----+---------------------------------------------------------------
+
+
+//About Sprite 0 hit；
+//该情况仅发生在第一个出现的精灵和背景冲突时，此时背景和精灵的颜色都是不透明的，并且他们都在寄存器中被要求显示在屏幕上；
+//只有第一次出现的Sprite 0 hit会被探测到；
+//当精灵在背景之下时，精灵仍然会碰触到背景，将会出现此情况；
+
+//About Sprite conflicts
+//当精灵之间发生冲突时，在OAM中地址靠前的精灵将会优先显示在屏幕上；
+
+//About Background scrolling
+//为了使得背景能够滚动，实际背景大小将会超过256*240，以实现滚动效果；
+//由于关于滚动的信息将会写入PPUCTRL，所以写入时间应该早于vblank的结束时间，并且应该晚于任何对于PPUADDR的修改时间；
+//
